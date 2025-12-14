@@ -8,55 +8,107 @@
         "responseMode": "lastNode",
         "options": {}
       },
-      "id": "webhook-node",
+      "id": "2c3bc4aa-d4a0-4d87-b934-2994df7ea51b",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        -240,
+        32
+      ],
       "webhookId": "CHANGE-THIS-TO-YOUR-WEBHOOK-ID"
     },
     {
       "parameters": {
-        "model": "claude-sonnet-4-20250514",
-        "text": "=You are generating topics for a charades game.\n\nGenerate ONE specific, actable topic that would be fun to perform.\nChoose from these categories: Movie, TV Show, Song, Book, Famous Person, Holiday Activity.\n\n{{ $json.body && $json.body.theme ? 'THEME: ' + $json.body.theme + ' - Make the topic fit this theme!\\n\\n' : '' }}{{ $json.body && $json.body.usedTopics && $json.body.usedTopics.length > 0 ? 'DO NOT use these already-used topics:\\n' + $json.body.usedTopics.join(', ') + '\\n\\n' : '' }}Requirements:\n- Pick culturally recognizable topics (not obscure)\n- Make it suitable for physical acting\n- Consider difficulty (should be doable but not too easy)\n- If theme provided, MUST match the theme\n\nReply in this EXACT format (no other text):\nCategory: [category name]\nEmoji: [single emoji that fits the category]\nTopic: [specific topic name]",
+        "jsCode": "// Get the AI Agent's response\nconst output = $input.first().json.output || $input.first().json.text || '';\n\n// Extract category, emoji, and topic using regex\nconst categoryMatch = output.match(/Category:\\s*(.+)/);\nconst emojiMatch = output.match(/Emoji:\\s*(.+)/);\nconst topicMatch = output.match(/Topic:\\s*(.+)/);\n\nconst category = categoryMatch ? categoryMatch[1].trim() : 'Mystery';\nconst emoji = emojiMatch ? emojiMatch[1].trim() : '🎭';\nconst topic = topicMatch ? topicMatch[1].trim() : 'Something Fun';\n\nreturn [{\n  json: {\n    category: category,\n    emoji: emoji,\n    topic: topic\n  }\n}];"
+      },
+      "id": "6c236f85-4e5c-47f1-aaf4-4a70d840bc3a",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are generating topics for a charades game.\n\n{{ $json.theme ? 'THEME: Generate topics related to \"' + $json.theme + '\". All topics must fit this theme.\\n\\n' : '' }}\n\nGenerate ONE specific topic that would be fun to act out.\nChoose from these categories: Movies, TV Shows, Songs, Books, Famous People.\n\n{{ $json.usedTopics && $json.usedTopics.length > 0 ? 'DO NOT generate any of these already used:\\n' + $json.usedTopics.join(', ') + '\\n\\n' : '' }}\n\nReply ONLY in this format:\nCategory: [category name]\nEmoji: [emoji]\nTopic: [topic name]"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        144,
+        32
+      ],
+      "id": "ecf19772-de11-4914-a926-010767de815a",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-4-5-20250929",
+          "cachedResultName": "Claude Sonnet 4.5"
+        },
         "options": {}
       },
-      "id": "claude-node",
-      "name": "Claude AI",
       "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
-      "typeVersion": 1,
-      "position": [450, 300],
+      "typeVersion": 1.3,
+      "position": [
+        144,
+        208
+      ],
+      "id": "4ba44b72-7602-4c2b-83b1-03a9b8ee530f",
+      "name": "Anthropic Chat Model",
       "credentials": {
         "anthropicApi": {
-          "id": "YOUR-CREDENTIAL-ID",
-          "name": "Anthropic API"
+          "id": "k7yyIv5uOse1D5OP",
+          "name": "Anthropic account"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// Parse Claude's response into structured data\nconst response = $input.first().json.response || $input.first().json.text || '';\n\n// Extract category, emoji, and topic using regex\nconst categoryMatch = response.match(/Category:\\s*(.+)/);\nconst emojiMatch = response.match(/Emoji:\\s*(.+)/);\nconst topicMatch = response.match(/Topic:\\s*(.+)/);\n\nconst category = categoryMatch ? categoryMatch[1].trim() : 'Mystery';\nconst emoji = emojiMatch ? emojiMatch[1].trim() : '🎭';\nconst topic = topicMatch ? topicMatch[1].trim() : 'Something Fun';\n\nreturn {\n  category: category,\n  emoji: emoji,\n  topic: topic\n};"
+        "assignments": {
+          "assignments": [
+            {
+              "id": "587db078-dd9e-4dc2-9095-a70d3b9f59ea",
+              "name": "chatInput",
+              "value": "=={{ ($json.body.theme ? 'THEME: Generate topics related to \"' + $json.body.theme + '\". All topics must fit this theme.\\n\\n' : '') + 'Generate ONE specific charades topic.\\n\\nCategories: Movies, TV Shows, Songs, Books, Famous People.\\n\\n' + ($json.body.usedTopics && $json.body.usedTopics.length > 0 ? 'Already used (do not repeat): ' + $json.body.usedTopics.join(', ') + '\\n\\n' : '') + 'Reply in this format:\\nCategory: [category]\\nEmoji: [emoji]\\nTopic: [topic name]' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
       },
-      "id": "format-response-node",
-      "name": "Format Response",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [650, 300]
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -48,
+        32
+      ],
+      "id": "26c60e62-8aba-48b4-90e6-aa71c7896193",
+      "name": "Edit Fields"
     }
   ],
+  "pinData": {},
   "connections": {
     "Webhook": {
       "main": [
         [
           {
-            "node": "Claude AI",
+            "node": "Edit Fields",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Claude AI": {
+    "AI Agent": {
       "main": [
         [
           {
@@ -66,15 +118,39 @@
           }
         ]
       ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "pinData": {},
+  "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "staticData": null,
-  "tags": [],
-  "triggerCount": 0,
-  "updatedAt": "2024-12-13T12:00:00.000Z",
-  "versionId": "1"
+  "versionId": "68399408-f6f7-470b-b270-c3c828f8484f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f7b4d981d350faf6cf4fda287504d26904783a578e3ae65bf617ef2973b27fd5"
+  },
+  "id": "uFyePQg11boo3Q0L",
+  "tags": []
 }
