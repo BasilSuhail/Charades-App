@@ -9,6 +9,11 @@ n8n-workflow-production.json
 icon-192.png
 icon-512.png
 
+# Database files (NO LONGER USED - app is now fully offline!)
+topics.db
+topics.sql
+topics-db.js
+
 # Python virtual environment
 venv/
 __pycache__/

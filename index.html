@@ -73,6 +73,7 @@
                 <div class="game-header">
                     <button id="view-leaderboard-btn" class="tab-btn">📊 Scores</button>
                     <div class="round-indicator" id="round-indicator">Round 1 of 3</div>
+                    <button id="restart-game-btn" class="tab-btn restart-btn">🔄 Restart</button>
                 </div>
 
                 <!-- Current Player -->
@@ -96,14 +97,19 @@
 
                 <!-- Topic Display (hidden initially) -->
                 <div id="topic-container" class="topic-container hidden">
-                    <div class="category-badge" id="category-badge">🎬 MOVIE</div>
-                    <div class="topic-text" id="topic-text">Home Alone</div>
+                    <div class="topic-card">
+                        <div class="topic-emoji" id="topic-emoji">🎬</div>
+                        <div class="topic-category" id="category-badge">MOVIE</div>
+                        <div class="topic-difficulty" id="difficulty-badge">🟡 Medium</div>
+                        <div class="topic-text" id="topic-text">Home Alone</div>
+                        <div class="topic-constraint" id="constraint-text">⚡ No hands</div>
+                    </div>
                 </div>
 
                 <!-- Peek Button (hidden initially) -->
                 <div id="peek-section" class="action-section hidden">
-                    <button id="peek-btn" class="btn btn-peek">👁️ HOLD TO PEEK</button>
-                    <p style="text-align: center; font-size: 0.9rem; opacity: 0.7; margin-top: 0.5rem;">Press and hold to see the topic</p>
+                    <button id="peek-btn" class="btn btn-peek">👁️ Ready? HOLD TO PEEK</button>
+                    <p style="text-align: center; font-size: 0.9rem; opacity: 0.7; margin-top: 0.5rem;">Press and hold to reveal the topic</p>
                 </div>
 
                 <!-- Action Buttons -->
@@ -166,8 +172,10 @@
         </div>
     </div>
 
-    <!-- Load config first, then app -->
+    <!-- Load config first, then embedded topics, then lightweight database, then app -->
     <script src="config.js"></script>
+    <script src="topics-embedded.js"></script>
+    <script src="topics-db-lightweight.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

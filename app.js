@@ -25,6 +25,12 @@ let gameState = {
     timerInterval: null,
     currentTopic: null,
     currentCategory: null,
+    currentDifficulty: null,
+    currentConstraint: null,
+
+    // Topic batching (AI generates 5 at once)
+    topicBatch: [],         // Batch of 5 topics from AI
+    batchIndex: 0,          // Which topic in the batch we're on
 
     // Game state tracking
     isGameActive: false,    // whether a game is in progress
@@ -46,6 +52,10 @@ function saveGameState() {
         usedTopics: gameState.usedTopics,
         currentTopic: gameState.currentTopic,
         currentCategory: gameState.currentCategory,
+        currentDifficulty: gameState.currentDifficulty,
+        currentConstraint: gameState.currentConstraint,
+        topicBatch: gameState.topicBatch,
+        batchIndex: gameState.batchIndex,
         isGameActive: gameState.isGameActive,
         currentScreen: gameState.currentScreen
     };
@@ -74,6 +84,10 @@ function loadGameState() {
                 gameState.usedTopics = parsed.usedTopics || [];
                 gameState.currentTopic = parsed.currentTopic;
                 gameState.currentCategory = parsed.currentCategory;
+                gameState.currentDifficulty = parsed.currentDifficulty;
+                gameState.currentConstraint = parsed.currentConstraint;
+                gameState.topicBatch = parsed.topicBatch || [];
+                gameState.batchIndex = parsed.batchIndex || 0;
                 gameState.isGameActive = true;
                 gameState.currentScreen = parsed.currentScreen || 'game-screen';
 
@@ -289,23 +303,37 @@ function updateRoundIndicator() {
 document.getElementById('start-turn-btn').addEventListener('click', async () => {
     hideElement('start-turn-section');
     showElement('loading');
-    
+
     try {
-        const topic = await getTopicFromAI();
-        
+        const topic = await getNextTopic();
+
         if (topic) {
             gameState.currentTopic = topic.topic;
             gameState.currentCategory = topic.category;
+            gameState.currentDifficulty = topic.difficulty;
+            gameState.currentConstraint = topic.constraint;
             gameState.usedTopics.push(topic.topic);
-            
+
             // Display topic
-            document.getElementById('category-badge').textContent = `${topic.emoji} ${topic.category}`;
+            document.getElementById('topic-emoji').textContent = topic.emoji;
+            document.getElementById('category-badge').textContent = topic.category.toUpperCase();
             document.getElementById('topic-text').textContent = topic.topic;
-            
+
+            // Show difficulty and constraint if elements exist
+            const difficultyEl = document.getElementById('difficulty-badge');
+            const constraintEl = document.getElementById('constraint-text');
+            if (difficultyEl) {
+                difficultyEl.textContent = `${getDifficultyEmoji(topic.difficulty)} ${topic.difficulty}`;
+                difficultyEl.className = `topic-difficulty difficulty-${topic.difficulty.toLowerCase()}`;
+            }
+            if (constraintEl) {
+                constraintEl.textContent = `⚡ ${topic.constraint}`;
+            }
+
             // Show topic first (so actor can see it)
             hideElement('loading');
             showElement('topic-container');
-            
+
             // Update skip button
             const player = gameState.players[gameState.currentPlayerIndex];
             const skipBtn = document.getElementById('skip-btn');
@@ -316,12 +344,12 @@ document.getElementById('start-turn-btn').addEventListener('click', async () => 
                 document.getElementById('skip-text').textContent = 'No skips left';
                 skipBtn.disabled = true;
             }
-            
+
             // Start countdown after showing topic
             setTimeout(() => {
                 startCountdown();
             }, 2000); // Give actor 2 seconds to read the topic
-            
+
         } else {
             // Fallback if API fails
             hideElement('loading');
@@ -334,7 +362,17 @@ document.getElementById('start-turn-btn').addEventListener('click', async () => 
     }
 });
 
-// Get topic from n8n/Claude
+// Helper function for difficulty emoji
+function getDifficultyEmoji(difficulty) {
+    const emojiMap = {
+        'Easy': '🟢',
+        'Medium': '🟡',
+        'Hard': '🔴'
+    };
+    return emojiMap[difficulty] || '⚪';
+}
+
+// Get topic from n8n/Gemini (returns single topic)
 async function getTopicFromAI() {
     // Check if webhook URL is configured
     if (!CONFIG.N8N_WEBHOOK_URL || CONFIG.N8N_WEBHOOK_URL === 'YOUR_N8N_WEBHOOK_URL_HERE') {
@@ -362,24 +400,80 @@ async function getTopicFromAI() {
 
         const data = await response.json();
 
+        // n8n returns a single topic object
         // Validate response format
-        if (!data.topic || !data.category || !data.emoji) {
-            console.error('Invalid response format:', data);
+        if (!data || typeof data !== 'object') {
+            console.error('Invalid response format (expected object):', data);
             throw new Error('Invalid response format');
         }
 
-        return data; // Expecting: {category, emoji, topic}
+        // Validate topic has required fields
+        if (!data.topic || !data.category || !data.emoji) {
+            console.error('Missing required fields in response:', data);
+            throw new Error('Invalid topic data');
+        }
+
+        // Ensure difficulty and constraint exist (add defaults if missing)
+        const topic = {
+            category: data.category,
+            emoji: data.emoji,
+            topic: data.topic,
+            difficulty: data.difficulty || 'Medium',
+            constraint: data.constraint || 'Normal acting'
+        };
+
+        return topic;
     } catch (error) {
         console.error('Error calling AI:', error);
         throw error;
     }
 }
 
-// Fallback topics if AI fails - 100 proper charades topics
+// Get next topic (fetch one at a time)
+async function getNextTopic() {
+    // Try AI first
+    try {
+        const topic = await getTopicFromAI();
+        return topic;
+    } catch (error) {
+        console.log('AI failed, trying database...');
+
+        // Try database next
+        try {
+            if (topicsDB && topicsDB.initialized) {
+                const dbTopic = topicsDB.getTopic(gameState.theme, gameState.usedTopics);
+                console.log('Got topic from database:', dbTopic);
+
+                // If theme was reset, show a notice to the user
+                if (dbTopic.resetNotice) {
+                    console.log(dbTopic.resetNotice);
+                    // You could show this in the UI if desired
+                    // For now, just log it
+                }
+
+                return dbTopic;
+            }
+        } catch (dbError) {
+            console.error('Database also failed:', dbError);
+        }
+
+        // Last resort: throw error to trigger fallback function
+        throw error;
+    }
+}
+
+// Fallback topics if AI fails - with difficulty and constraints
 function useFallbackTopic() {
+    const constraints = [
+        "No hands", "Slow motion", "Must sit down", "Humming allowed",
+        "Keep eyes closed", "One hand only", "No facial expressions",
+        "Tip-toe only", "Exaggerated movements", "Silent screaming",
+        "Robot mode", "In reverse", "Super speed", "Frozen face"
+    ];
+
     const fallbacks = [
         // MOVIES (30)
-        { category: 'Movie', emoji: '🎬', topic: 'Home Alone' },
+        { category: 'Movie', emoji: '🎬', topic: 'Home Alone', difficulty: 'Easy' },
         { category: 'Movie', emoji: '🎬', topic: 'The Wizard of Oz' },
         { category: 'Movie', emoji: '🎬', topic: 'Jaws' },
         { category: 'Movie', emoji: '🎬', topic: 'Titanic' },
@@ -491,17 +585,41 @@ function useFallbackTopic() {
     
     // Pick random topic not already used
     const available = fallbacks.filter(f => !gameState.usedTopics.includes(f.topic));
-    const topic = available.length > 0 ? 
-        available[Math.floor(Math.random() * available.length)] : 
+    let topic = available.length > 0 ?
+        available[Math.floor(Math.random() * available.length)] :
         fallbacks[Math.floor(Math.random() * fallbacks.length)];
-    
+
+    // Add random difficulty if not present
+    if (!topic.difficulty) {
+        const difficulties = ['Easy', 'Medium', 'Hard'];
+        topic.difficulty = difficulties[Math.floor(Math.random() * difficulties.length)];
+    }
+
+    // Add random constraint
+    const randomConstraint = constraints[Math.floor(Math.random() * constraints.length)];
+    topic.constraint = randomConstraint;
+
     gameState.currentTopic = topic.topic;
     gameState.currentCategory = topic.category;
+    gameState.currentDifficulty = topic.difficulty;
+    gameState.currentConstraint = topic.constraint;
     gameState.usedTopics.push(topic.topic);
-    
-    document.getElementById('category-badge').textContent = `${topic.emoji} ${topic.category}`;
+
+    document.getElementById('topic-emoji').textContent = topic.emoji;
+    document.getElementById('category-badge').textContent = topic.category.toUpperCase();
     document.getElementById('topic-text').textContent = topic.topic;
-    
+
+    // Show difficulty and constraint if elements exist
+    const difficultyEl = document.getElementById('difficulty-badge');
+    const constraintEl = document.getElementById('constraint-text');
+    if (difficultyEl) {
+        difficultyEl.textContent = `${getDifficultyEmoji(topic.difficulty)} ${topic.difficulty}`;
+        difficultyEl.className = `topic-difficulty difficulty-${topic.difficulty.toLowerCase()}`;
+    }
+    if (constraintEl) {
+        constraintEl.textContent = `⚡ ${topic.constraint}`;
+    }
+
     // Update skip button
     const player = gameState.players[gameState.currentPlayerIndex];
     const skipBtn = document.getElementById('skip-btn');
@@ -512,9 +630,9 @@ function useFallbackTopic() {
         document.getElementById('skip-text').textContent = 'No skips left';
         skipBtn.disabled = true;
     }
-    
+
     showElement('topic-container');
-    
+
     // Start countdown after showing topic
     setTimeout(() => {
         startCountdown();
@@ -543,9 +661,11 @@ function startCountdown() {
         } else {
             clearInterval(countdownInterval);
             hideElement('countdown-container');
-            
-            // Hide topic, show timer, peek button, and action buttons
-            hideElement('topic-container');
+
+            // Hide topic content, but show container with hidden card
+            const topicCard = document.querySelector('.topic-card');
+            if (topicCard) topicCard.classList.add('hidden');
+            showElement('topic-container');
             showElement('peek-section');
             showElement('turn-actions-section');
             startTimer();
@@ -589,63 +709,78 @@ function stopTimer() {
 
 // Peek button - hold to reveal topic
 const peekBtn = document.getElementById('peek-btn');
+const topicCard = document.querySelector('.topic-card');
 
 // Support both mouse and touch events
 peekBtn.addEventListener('mousedown', () => {
-    showElement('topic-container');
+    if (topicCard) topicCard.classList.remove('hidden');
 });
 
 peekBtn.addEventListener('mouseup', () => {
-    hideElement('topic-container');
+    if (topicCard) topicCard.classList.add('hidden');
 });
 
 peekBtn.addEventListener('mouseleave', () => {
-    hideElement('topic-container');
+    if (topicCard) topicCard.classList.add('hidden');
 });
 
 peekBtn.addEventListener('touchstart', (e) => {
     e.preventDefault(); // Prevent default touch behavior
-    showElement('topic-container');
+    if (topicCard) topicCard.classList.remove('hidden');
 });
 
 peekBtn.addEventListener('touchend', (e) => {
     e.preventDefault();
-    hideElement('topic-container');
+    if (topicCard) topicCard.classList.add('hidden');
 });
 
 // Skip button
 document.getElementById('skip-btn').addEventListener('click', async () => {
     const player = gameState.players[gameState.currentPlayerIndex];
-    
+
     if (player.skipsLeft > 0) {
         player.skipsLeft--;
         stopTimer();
-        
+
         // Get new topic
         hideElement('topic-container');
         hideElement('turn-actions-section');
         hideElement('timer-container');
         hideElement('peek-section');
         showElement('loading');
-        
+
         try {
-            const topic = await getTopicFromAI();
+            const topic = await getNextTopic();
             if (topic) {
                 gameState.currentTopic = topic.topic;
                 gameState.currentCategory = topic.category;
+                gameState.currentDifficulty = topic.difficulty;
+                gameState.currentConstraint = topic.constraint;
                 gameState.usedTopics.push(topic.topic);
-                
-                document.getElementById('category-badge').textContent = `${topic.emoji} ${topic.category}`;
+
+                document.getElementById('topic-emoji').textContent = topic.emoji;
+                document.getElementById('category-badge').textContent = topic.category.toUpperCase();
                 document.getElementById('topic-text').textContent = topic.topic;
-                
+
+                // Show difficulty and constraint
+                const difficultyEl = document.getElementById('difficulty-badge');
+                const constraintEl = document.getElementById('constraint-text');
+                if (difficultyEl) {
+                    difficultyEl.textContent = `${getDifficultyEmoji(topic.difficulty)} ${topic.difficulty}`;
+                    difficultyEl.className = `topic-difficulty difficulty-${topic.difficulty.toLowerCase()}`;
+                }
+                if (constraintEl) {
+                    constraintEl.textContent = `⚡ ${topic.constraint}`;
+                }
+
                 hideElement('loading');
                 showElement('topic-container');
-                
+
                 // Update skip button
-                document.getElementById('skip-text').textContent = player.skipsLeft > 0 ? 
+                document.getElementById('skip-text').textContent = player.skipsLeft > 0 ?
                     `Skip (${player.skipsLeft} left)` : 'No skips left';
                 document.getElementById('skip-btn').disabled = player.skipsLeft === 0;
-                
+
                 // Start countdown
                 setTimeout(() => {
                     startCountdown();
@@ -766,6 +901,20 @@ document.getElementById('view-leaderboard-btn').addEventListener('click', () => 
 
 document.getElementById('back-to-game-btn').addEventListener('click', () => {
     showGameScreen();
+});
+
+// Restart game button - works from anywhere
+document.getElementById('restart-game-btn').addEventListener('click', () => {
+    if (confirm('Are you sure you want to restart the game? All progress will be lost.')) {
+        // Stop any active timers
+        stopTimer();
+
+        // Clear saved game state
+        clearGameState();
+
+        // Reload the page to start fresh
+        location.reload();
+    }
 });
 
 function showLeaderboard() {
