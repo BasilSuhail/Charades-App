@@ -1,0 +1,80 @@
+{
+  "name": "Charades Topic Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "charades-topic",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "CHANGE-THIS-TO-YOUR-WEBHOOK-ID"
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "text": "=You are generating topics for a charades game.\n\nGenerate ONE specific, actable topic that would be fun to perform.\nChoose from these categories: Movie, TV Show, Song, Book, Famous Person, Holiday Activity.\n\n{{ $json.body && $json.body.theme ? 'THEME: ' + $json.body.theme + ' - Make the topic fit this theme!\\n\\n' : '' }}{{ $json.body && $json.body.usedTopics && $json.body.usedTopics.length > 0 ? 'DO NOT use these already-used topics:\\n' + $json.body.usedTopics.join(', ') + '\\n\\n' : '' }}Requirements:\n- Pick culturally recognizable topics (not obscure)\n- Make it suitable for physical acting\n- Consider difficulty (should be doable but not too easy)\n- If theme provided, MUST match the theme\n\nReply in this EXACT format (no other text):\nCategory: [category name]\nEmoji: [single emoji that fits the category]\nTopic: [specific topic name]",
+        "options": {}
+      },
+      "id": "claude-node",
+      "name": "Claude AI",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "anthropicApi": {
+          "id": "YOUR-CREDENTIAL-ID",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude's response into structured data\nconst response = $input.first().json.response || $input.first().json.text || '';\n\n// Extract category, emoji, and topic using regex\nconst categoryMatch = response.match(/Category:\\s*(.+)/);\nconst emojiMatch = response.match(/Emoji:\\s*(.+)/);\nconst topicMatch = response.match(/Topic:\\s*(.+)/);\n\nconst category = categoryMatch ? categoryMatch[1].trim() : 'Mystery';\nconst emoji = emojiMatch ? emojiMatch[1].trim() : '🎭';\nconst topic = topicMatch ? topicMatch[1].trim() : 'Something Fun';\n\nreturn {\n  category: category,\n  emoji: emoji,\n  topic: topic\n};"
+      },
+      "id": "format-response-node",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Claude AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude AI": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-12-13T12:00:00.000Z",
+  "versionId": "1"
+}
